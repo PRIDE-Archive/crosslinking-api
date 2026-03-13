@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED 1
 
 # Install pipenv and compilation dependencies
 RUN python3 -m pip install wheel pip --upgrade && pip install pipenv
-RUN apt-get update && apt-get install
+RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
 
 COPY Pipfile .
 COPY Pipfile.lock .
