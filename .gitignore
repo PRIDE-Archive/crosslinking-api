@@ -18,4 +18,5 @@ credentials.py
 test.db
 database.ini
 kubernetes.yml
-Dockerfile
+
+.coverage

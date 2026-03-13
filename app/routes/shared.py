@@ -211,9 +211,9 @@ async def execute_query(query: str, params: Optional[List[Any]] = None, fetch_on
                 schema='pg_catalog'
             )
             if fetch_one:
-                result = await conn.fetchrow(query, *params)
+                result = await conn.fetchrow(query, *(params or []))
             else:
-                result = await conn.fetch(query, *params)
+                result = await conn.fetch(query, *(params or []))
             return result
 
     except Exception as e:

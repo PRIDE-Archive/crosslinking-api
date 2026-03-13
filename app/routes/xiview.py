@@ -1,3 +1,4 @@
+import asyncio
 import logging.config
 import struct
 
@@ -12,6 +13,7 @@ from app.routes.shared import (
 )
 from index import get_session
 from db_config_parser import get_xiview_base_url
+from xi2annotator.annotation import annotate_request
 
 xiview_data_router = APIRouter()
 
@@ -40,6 +42,24 @@ async def get_peaklist(id, sd_ref, upload_id):
         "mz": struct.unpack('%sd' % (len(data['mz']) // 8), data['mz'])
     }
     return Response(orjson.dumps(unpacked_data), media_type='application/json')
+
+
+@xiview_data_router.post('/get_annotated_peaklist', tags=["xiVIEW"])
+async def get_annotated_peaklist(request: Request, id: str, sd_ref: str, upload_id: str):
+    # 1. Fetch peaks from DB (same query as get_peaklist)
+    query = "SELECT intensity, mz FROM spectrum WHERE id = $1 AND spectra_data_id = $2 AND upload_id = $3"
+    data = await execute_query(query, [id, int(sd_ref), int(upload_id)], fetch_one=True)
+    mz = struct.unpack('%sd' % (len(data['mz']) // 8), data['mz'])
+    intensity = struct.unpack('%sd' % (len(data['intensity']) // 8), data['intensity'])
+    peaks = [{"mz": m, "intensity": i} for m, i in zip(mz, intensity)]
+
+    # 2. Inject peaks into annotation body
+    body = await request.json()
+    body["peaks"] = peaks
+
+    # 3. Call annotator in-process (CPU-bound — offload to thread pool)
+    result = await asyncio.to_thread(annotate_request, body)
+    return Response(orjson.dumps(result, option=orjson.OPT_SERIALIZE_NUMPY), media_type='application/json')
 
 
 @xiview_data_router.get('/visualisations/{project_id}', tags=["xiVIEW"])
@@ -400,4 +420,4 @@ async def get_matches_by_multiple_spectra_id(upload_id: int, multiple_spectra_id
 async def get_datasets():
     query = """SELECT DISTINCT project_id, identification_file_name FROM upload;"""
     data = await execute_query(query)
-    return Response(orjson.dumps(data), media_type='application/json')
+    return Response(orjson.dumps([dict(r) for r in data]), media_type='application/json')

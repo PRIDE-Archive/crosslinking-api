@@ -13,7 +13,6 @@ pymzml = ">=0.7.8"
 pyteomics = ">=3.4.2"
 requests = ">=2.20.1"
 urllib3 = ">=1.24.2"
-pytest = "*"
 psycopg2-binary = "*"
 sqlalchemy = "*"
 sqlalchemy-utils = "*"
@@ -28,8 +27,14 @@ mzidentml-reader = "*"
 redis = "*"
 hiredis = "*"
 asyncpg = "*"
+xi2annotator = "*"
 
 [dev-packages]
+pytest = "*"
+pytest-cov = "*"
+pytest-asyncio = "*"
+httpx = "*"
+responses = "*"
 
 [requires]
 python_version = "3.11"
