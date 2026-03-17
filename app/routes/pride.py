@@ -14,7 +14,7 @@ from fastapi import HTTPException, Security
 from fastapi.responses import FileResponse
 from models.upload import Upload
 from sqlalchemy import text
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, defer, joinedload
 import typing as t
 
 # my ide gives warning for import from models, is something missing from top __init__.py in xi-mzidentml-converter
@@ -617,7 +617,7 @@ async def project_search(q: Union[str | None] = Query(default="",
     list_of_ids = [id for (id,) in matchig_ids]
     try:
         offset = (page - 1) * page_size
-        projects = session.query(ProjectDetail).filter(ProjectDetail.id.in_(list_of_ids)).offset(offset).limit(
+        projects = session.query(ProjectDetail).options(defer(ProjectDetail.xiview_url)).filter(ProjectDetail.id.in_(list_of_ids)).offset(offset).limit(
             page_size).all()
         total_elements = len(list_of_ids)
     except Exception as e:
