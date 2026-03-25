@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, status, Query, Path, UploadFile, File
 from fastapi import HTTPException, Security
 from fastapi.responses import FileResponse
 from models.upload import Upload
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session, defer, joinedload
 import typing as t
 
@@ -750,6 +750,63 @@ async def protein_search(project_id: Annotated[str, Path(...,
 
     response = {
         "proteins": proteins_list,
+        "page": {
+            "page_no": page,
+            "page_size": page_size,
+            "total_elements": total_elements,
+            "total_pages": ceil(total_elements / page_size) if total_elements else 0,
+        }
+    }
+
+    return response
+
+
+@pride_router.get("/proteins", tags=["Proteins"], response_model=None)
+async def all_protein_accessions(
+        q: Union[str | None] = Query(default=None,
+                                     alias="query",
+                                     max_length=20,
+                                     title="query",
+                                     description="Filter by protein accession"),
+        page: int = Query(1, description="Page number"),
+        page_size: int = Query(1000, gt=5, lt=10000, description="Number of items per page"),
+        session: Session = Depends(get_session)):
+    """
+    Retrieve all unique protein accessions across all projects.
+    :param q: Optional filter by protein accession
+    :param page: page number
+    :param page_size: records per page
+    :param session: connection to database
+    :return: Paginated list of unique protein accessions with total count
+    """
+    try:
+        query = session.query(
+            ProjectSubDetail.protein_accession
+        ).distinct()
+
+        if q and q != '*' and q != 'all':
+            query = query.filter(
+                ProjectSubDetail.protein_accession.ilike(f'%{q}%')
+            )
+
+        total_elements = query.count()
+
+        offset = (page - 1) * page_size
+        protein_accessions = query.order_by(
+            ProjectSubDetail.protein_accession
+        ).offset(offset).limit(page_size).all()
+
+        proteins_list = [row.protein_accession for row in protein_accessions]
+
+    except Exception as e:
+        logging.error(f"Error occurred: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal Server Error")
+
+    if not proteins_list and page == 1:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Protein accessions not found")
+
+    response = {
+        "protein_accessions": proteins_list,
         "page": {
             "page_no": page,
             "page_size": page_size,
