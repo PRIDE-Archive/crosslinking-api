@@ -13,8 +13,8 @@ from fastapi import APIRouter, Depends, status, Query, Path, UploadFile, File
 from fastapi import HTTPException, Security
 from fastapi.responses import FileResponse
 from models.upload import Upload
-from sqlalchemy import text
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, text
+from sqlalchemy.orm import Session, defer, joinedload
 import typing as t
 
 # my ide gives warning for import from models, is something missing from top __init__.py in xi-mzidentml-converter
@@ -617,7 +617,7 @@ async def project_search(q: Union[str | None] = Query(default="",
     list_of_ids = [id for (id,) in matchig_ids]
     try:
         offset = (page - 1) * page_size
-        projects = session.query(ProjectDetail).filter(ProjectDetail.id.in_(list_of_ids)).offset(offset).limit(
+        projects = session.query(ProjectDetail).options(defer(ProjectDetail.xiview_url)).filter(ProjectDetail.id.in_(list_of_ids)).offset(offset).limit(
             page_size).all()
         total_elements = len(list_of_ids)
     except Exception as e:
@@ -750,6 +750,63 @@ async def protein_search(project_id: Annotated[str, Path(...,
 
     response = {
         "proteins": proteins_list,
+        "page": {
+            "page_no": page,
+            "page_size": page_size,
+            "total_elements": total_elements,
+            "total_pages": ceil(total_elements / page_size) if total_elements else 0,
+        }
+    }
+
+    return response
+
+
+@pride_router.get("/proteins", tags=["Proteins"], response_model=None)
+async def all_protein_accessions(
+        q: Union[str | None] = Query(default=None,
+                                     alias="query",
+                                     max_length=20,
+                                     title="query",
+                                     description="Filter by protein accession"),
+        page: int = Query(1, description="Page number"),
+        page_size: int = Query(1000, gt=5, lt=10000, description="Number of items per page"),
+        session: Session = Depends(get_session)):
+    """
+    Retrieve all unique protein accessions across all projects.
+    :param q: Optional filter by protein accession
+    :param page: page number
+    :param page_size: records per page
+    :param session: connection to database
+    :return: Paginated list of unique protein accessions with total count
+    """
+    try:
+        query = session.query(
+            ProjectSubDetail.protein_accession
+        ).distinct()
+
+        if q and q != '*' and q != 'all':
+            query = query.filter(
+                ProjectSubDetail.protein_accession.ilike(f'%{q}%')
+            )
+
+        total_elements = query.count()
+
+        offset = (page - 1) * page_size
+        protein_accessions = query.order_by(
+            ProjectSubDetail.protein_accession
+        ).offset(offset).limit(page_size).all()
+
+        proteins_list = [row.protein_accession for row in protein_accessions]
+
+    except Exception as e:
+        logging.error(f"Error occurred: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal Server Error")
+
+    if not proteins_list and page == 1:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Protein accessions not found")
+
+    response = {
+        "protein_accessions": proteins_list,
         "page": {
             "page_no": page,
             "page_size": page_size,
@@ -909,6 +966,195 @@ def invalidate_cache(redis_config_param=Depends(redis_config)):
     key = redis_config_param['peptide_per_protein']
     redis_client.delete(key)
     return None
+
+
+async def _recalculate_project_counts(project_id: str, session: Session):
+    """Recalculate only number_of_proteins, number_of_peptides, number_of_spectra
+    for a given project and update the existing projectdetails record."""
+    sql_values = {"projectaccession": project_id}
+
+    sql_number_of_spectra = text("""
+        SELECT count(*) FROM match
+        WHERE upload_id IN (
+            SELECT u.id FROM upload u
+            WHERE u.upload_time = (
+                SELECT max(upload_time) FROM upload
+                WHERE project_id = u.project_id AND identification_file_name = u.identification_file_name
+            ) AND u.project_id = :projectaccession
+        ) AND pass_threshold = True
+    """)
+
+    sql_number_of_peptides = text("""
+        SELECT COUNT(DISTINCT pep_id) FROM (
+            SELECT pep1_id AS pep_id FROM match si
+            WHERE si.upload_id IN (
+                SELECT u.id FROM upload u
+                WHERE u.upload_time = (
+                    SELECT max(upload_time) FROM upload
+                    WHERE project_id = u.project_id AND identification_file_name = u.identification_file_name
+                ) AND u.project_id = :projectaccession
+            ) AND si.pass_threshold = TRUE
+            UNION
+            SELECT pep2_id AS pep_id FROM match si
+            WHERE si.upload_id IN (
+                SELECT u.id FROM upload u
+                WHERE u.upload_time = (
+                    SELECT max(upload_time) FROM upload
+                    WHERE project_id = u.project_id AND identification_file_name = u.identification_file_name
+                ) AND u.project_id = :projectaccession
+            ) AND si.pass_threshold = TRUE
+        ) AS result
+    """)
+
+    sql_number_of_proteins = text("""
+        SELECT COUNT(*)
+        FROM (
+            SELECT DISTINCT dbs.accession
+            FROM (
+                SELECT pe1.dbsequence_id AS protein_id
+                FROM match si
+                INNER JOIN modifiedpeptide mp1 ON si.pep1_id = mp1.id AND si.upload_id = mp1.upload_id
+                INNER JOIN peptideevidence pe1 ON mp1.id = pe1.peptide_id AND mp1.upload_id = pe1.upload_id
+                INNER JOIN modifiedpeptide mp2 ON si.pep2_id = mp2.id AND si.upload_id = mp2.upload_id
+                INNER JOIN peptideevidence pe2 ON mp2.id = pe2.peptide_id AND mp2.upload_id = pe2.upload_id
+                INNER JOIN upload u ON u.id = si.upload_id
+                WHERE u.id IN (
+                    SELECT u.id FROM upload u
+                    WHERE u.upload_time = (
+                        SELECT MAX(upload_time) FROM upload
+                        WHERE project_id = u.project_id AND identification_file_name = u.identification_file_name
+                    ) AND u.project_id = :projectaccession
+                ) AND mp1.link_site1 > 0 AND mp2.link_site1 > 0 AND pe1.is_decoy = FALSE AND pe2.is_decoy = FALSE
+                AND si.pass_threshold = TRUE
+                UNION
+                SELECT pe2.dbsequence_id AS protein_id
+                FROM match si
+                INNER JOIN modifiedpeptide mp1 ON si.pep1_id = mp1.id AND si.upload_id = mp1.upload_id
+                INNER JOIN peptideevidence pe1 ON mp1.id = pe1.peptide_id AND mp1.upload_id = pe1.upload_id
+                INNER JOIN modifiedpeptide mp2 ON si.pep2_id = mp2.id AND si.upload_id = mp2.upload_id
+                INNER JOIN peptideevidence pe2 ON mp2.id = pe2.peptide_id AND mp2.upload_id = pe2.upload_id
+                INNER JOIN upload u ON u.id = si.upload_id
+                WHERE u.id IN (
+                    SELECT u.id FROM upload u
+                    WHERE u.upload_time = (
+                        SELECT MAX(upload_time) FROM upload
+                        WHERE project_id = u.project_id AND identification_file_name = u.identification_file_name
+                    ) AND u.project_id = :projectaccession
+                ) AND mp1.link_site1 > 0 AND mp2.link_site1 > 0 AND pe1.is_decoy = FALSE AND pe2.is_decoy = FALSE
+                AND si.pass_threshold = TRUE
+            ) AS protein_id
+            INNER JOIN dbsequence AS dbs ON protein_id = id
+        ) AS accessions
+    """)
+
+    num_spectra = await get_number_of_counts(sql_number_of_spectra, sql_values, session)
+    num_peptides = await get_number_of_counts(sql_number_of_peptides, sql_values, session)
+    num_proteins = await get_number_of_counts(sql_number_of_proteins, sql_values, session)
+
+    existing = session.query(ProjectDetail).filter_by(project_id=project_id).first()
+    if existing:
+        existing.number_of_spectra = num_spectra
+        existing.number_of_peptides = num_peptides
+        existing.number_of_proteins = num_proteins
+        session.commit()
+        logger.info(f"Updated projectdetails for {project_id}: spectra={num_spectra}, peptides={num_peptides}, proteins={num_proteins}")
+    else:
+        logger.warning(f"No projectdetails record found for {project_id}, skipping count update")
+
+
+@pride_router.post("/admin/recalculate-stats", tags=["Admin"])
+async def recalculate_stats(
+        project_id: str = Query(None, description="Optional project ID to refresh xiVIEW cache for. If omitted, refreshes all cached projects."),
+        session: Session = Depends(get_session),
+        redis_config_param=Depends(redis_config),
+        api_key: str = Security(get_api_key)):
+    """
+    Clear all Redis caches and recalculate statistics.
+    - Clears peptide_per_protein and labhead_count stats caches
+    - Clears xiVIEW data caches (matches, peptides, proteins)
+    - Triggers recalculation by calling the stats endpoints
+    """
+    redis_client = redis.Redis(host=redis_config_param['host'],
+                               port=redis_config_param['port'],
+                               password=redis_config_param['password'],
+                               decode_responses=False)
+
+    cleared_keys = []
+    errors = []
+
+    # 1. Clear statistics caches
+    stats_keys = [
+        redis_config_param.get('peptide_per_protein', 'peptide_per_protein'),
+        redis_config_param.get('labhead_count', 'labhead_count'),
+    ]
+    for key in stats_keys:
+        try:
+            redis_client.delete(key)
+            cleared_keys.append(str(key))
+        except Exception as e:
+            errors.append(f"Failed to delete key {key}: {e}")
+
+    # 2. Clear xiVIEW caches
+    try:
+        if project_id:
+            # Clear only the specified project
+            for endpoint in ['matches', 'peptides', 'proteins']:
+                pattern = f"xiview:{endpoint}:{project_id}*"
+                for key in redis_client.scan_iter(match=pattern):
+                    redis_client.delete(key)
+                    cleared_keys.append(key.decode() if isinstance(key, bytes) else str(key))
+        else:
+            # Clear all xiVIEW caches
+            for key in redis_client.scan_iter(match="xiview:*"):
+                redis_client.delete(key)
+                cleared_keys.append(key.decode() if isinstance(key, bytes) else str(key))
+    except Exception as e:
+        errors.append(f"Failed to clear xiVIEW cache: {e}")
+
+    # 3. Recalculate projectdetails (number_of_proteins, number_of_peptides, number_of_spectra)
+    recalculated = []
+    updated_projects = []
+
+    try:
+        if project_id:
+            project_ids = [project_id]
+        else:
+            sql_project_accession_list = text("SELECT DISTINCT u.project_id FROM upload u")
+            project_ids = await get_accessions(sql_project_accession_list, {}, session)
+
+        for pid in project_ids:
+            try:
+                await _recalculate_project_counts(pid, session)
+                updated_projects.append(pid)
+            except Exception as e:
+                errors.append(f"Failed to update projectdetails for {pid}: {e}")
+        recalculated.append("projectdetails")
+    except Exception as e:
+        errors.append(f"Failed to recalculate projectdetails: {e}")
+
+    # 4. Recalculate Redis-cached statistics
+    # Recalculate peptide_per_protein
+    try:
+        await peptide_per_protein(session=session, redis_config_param=redis_config_param)
+        recalculated.append("peptide_per_protein")
+    except Exception as e:
+        errors.append(f"Failed to recalculate peptide_per_protein: {e}")
+
+    # Recalculate labhead_count
+    try:
+        await labhead_count(session=session, redis_config_param=redis_config_param)
+        recalculated.append("labhead_count")
+    except Exception as e:
+        errors.append(f"Failed to recalculate labhead_count: {e}")
+
+    return {
+        "status": "completed",
+        "cleared_keys": cleared_keys,
+        "updated_projects": updated_projects,
+        "recalculated": recalculated,
+        "errors": errors if errors else None,
+        "message": f"Cleared {len(cleared_keys)} cache keys, updated projectdetails for {len(updated_projects)} projects, recalculated {len(recalculated)} statistics."
+    }
 
 
 def _extract_labheads_from_proxi(proxi_json):
