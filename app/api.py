@@ -10,7 +10,7 @@ from app.routes.pdbdev import pdbdev_router
 from app.routes.xiview import xiview_data_router
 from app.routes.xiview_xi2 import xiview_xi2_data_router
 from app.routes.parse import parser_router
-from app.routes.shared import init_db_pool, close_db_pool
+from app.routes.shared import init_db_pool, close_db_pool, execute_query
 from fastapi.middleware.gzip import GZipMiddleware
 from db_config_parser import API_version
 
@@ -30,7 +30,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Crosslinking API",
-              description="This is a REST API for accessing crosslinking data from the PRIDE Crosslinkling resource.",
+              description="This is a REST API for accessing crosslinking data from the PRIDE Crosslinking resource.",
               version="3.0.1",
                 contact={
                   "name": "PRIDE Team",
@@ -83,6 +83,19 @@ app.include_router(pride_router, prefix="/pride/ws/archive/crosslinking/" + API_
 # app.include_router(pdbdev_router, prefix="/pride/ws/archive/crosslinking/" + API_VERSION + "/pdbdev", tags=["Deprecated: PDBDev"])
 app.include_router(pdbdev_router, prefix="/pride/ws/archive/crosslinking/" + API_VERSION + "/pdbihm", tags=["PDB-IHM"])
 app.include_router(xiview_data_router, prefix="/pride/ws/archive/crosslinking/" + API_VERSION + "/data")
-app.include_router(xiview_xi2_data_router, prefix="/pride/ws/archive/crosslinking/" + API_VERSION + "/xi2/data")
+app.include_router(xiview_xi2_data_router, prefix="/xi2/data")
 app.include_router(parser_router, prefix="/pride/ws/archive/crosslinking/" + API_VERSION + "/parse")
+
+
+@app.get("/debug/db", include_in_schema=False)
+async def debug_db():
+    query = """SELECT pid, state, wait_event_type, wait_event,
+                      now() - query_start AS duration, query
+               FROM pg_stat_activity
+               WHERE state != 'idle'
+               ORDER BY duration DESC NULLS LAST;"""
+    import orjson
+    from fastapi.responses import Response
+    records = await execute_query(query)
+    return Response(orjson.dumps([dict(r) for r in records], default=str), media_type='application/json')
 

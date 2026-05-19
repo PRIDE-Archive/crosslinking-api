@@ -1,3 +1,4 @@
+import asyncio
 import asyncpg
 import functools
 import json
@@ -35,6 +36,7 @@ async def init_db_pool():
     _db_pool = await asyncpg.create_pool(
         min_size=10,
         max_size=30,
+        command_timeout=300,
         **db_info,
     )
     logger.info("asyncpg connection pool initialized (min=10, max=30)")
@@ -204,7 +206,7 @@ async def execute_query(query: str, params: Optional[List[Any]] = None, fetch_on
     if _db_pool is None:
         await init_db_pool()
     try:
-        async with _db_pool.acquire() as conn:
+        async with _db_pool.acquire(timeout=300) as conn:
             await conn.set_type_codec(
                 'json',
                 encoder=json.dumps,
@@ -212,11 +214,17 @@ async def execute_query(query: str, params: Optional[List[Any]] = None, fetch_on
                 schema='pg_catalog'
             )
             if fetch_one:
-                result = await conn.fetchrow(query, *(params or []))
+                result = await conn.fetchrow(query, *(params or []), timeout=300)
             else:
-                result = await conn.fetch(query, *(params or []))
+                result = await conn.fetch(query, *(params or []), timeout=300)
             return result
 
+    except asyncio.TimeoutError:
+        logger.error(
+            "DB pool acquire timed out (pool exhausted) — all 30 connections busy\nCaller stack:\n%s",
+            ''.join(traceback.format_stack()[:-1])
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database busy")
     except Exception:
         logging.exception(
             "Database operation failed\nCaller stack:\n%s",

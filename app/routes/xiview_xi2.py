@@ -15,7 +15,7 @@ from index import get_session
 from db_config_parser import get_xiview_base_url
 from xi2annotator.annotation import annotate_request
 
-xiview_xi2_data_router = APIRouter()
+xiview_xi2_data_router = APIRouter(include_in_schema=False)
 
 
 logger = logging.getLogger(__name__)
@@ -63,10 +63,37 @@ async def get_xiview_analysis_collection_spectrum_identifications():
     return Response(content=b'[]', media_type='application/json')
 
 
+@log_execution_time_async
 @xiview_xi2_data_router.get('/get_xiview_spectrum_identification_protocols', tags=["xiVIEW"])
-async def get_xiview_spectrum_identification_protocols():
-    """Stub: not implemented for xi2 schema. Returns empty list."""
-    return Response(content=b'[]', media_type='application/json')
+async def get_xiview_spectrum_identification_protocols(project):
+    """
+    Get search config info (resultset + search metadata) for the given resultset UUIDs.
+
+    :return: json mapping resultset_id -> resultset/search metadata
+    """
+    logger.info(f"get_xiview_spectrum_identification_protocols for {project}")
+
+    resultset_ids = [project] if isinstance(project, str) else project
+
+    query = """SELECT rs.name AS rs_name, rs.note AS rs_note, rs.config AS rs_config,
+                    rs.main_score AS rs_main_score, rst.name AS resultset_type,
+                    rs.id AS id, s.name AS s_name, s.config AS s_config, s.note AS s_note, s.id AS s_id
+                FROM resultset AS rs
+                    LEFT JOIN resultsettype AS rst ON rs.rstype_id = rst.id
+                    LEFT JOIN ResultSearch AS result_search ON rs.id = result_search.resultset_id
+                    LEFT JOIN Search AS s ON result_search.search_id = s.id
+                WHERE rs.id = ANY($1::uuid[]);"""
+
+    records = await execute_query(query, [resultset_ids])
+
+    resultsets = {}
+    for row in records:
+        row_dict = dict(row)
+        if isinstance(row_dict.get('s_config'), (str, bytes)):
+            row_dict['s_config'] = orjson.loads(row_dict['s_config'])
+        resultsets[str(row_dict['id'])] = row_dict
+
+    return Response(orjson.dumps(resultsets, default=str), media_type='application/json')
 
 
 @xiview_xi2_data_router.get('/get_xiview_spectra_data', tags=["xiVIEW"])
@@ -97,12 +124,20 @@ async def get_xiview_matches(project):
     """
     logger.info(f"get_xiview_matches for {project}")
 
-    # todo - rename 'si' to 'm'
-    query = """SELECT m.id AS id, m.pep1_id AS pi1, m.pep2_id AS pi2, 
+    resultset_ids = [project] if isinstance(project, str) else project
+
+    score_query = """SELECT sn.name AS score_name, sn.score_id AS score_index, sn.higher_is_better AS higher_better
+                FROM scorename AS sn
+                WHERE sn.resultset_id = ANY($1::uuid[]) AND sn.primary_score = TRUE
+                LIMIT 1;"""
+    main_score = await execute_query(score_query, [resultset_ids], fetch_one=True)
+    main_score_index = main_score['score_index']
+
+    query = """SELECT m.id AS id, m.pep1_id AS pi1, m.pep2_id AS pi2,
                     CASE WHEN rm.site1 IS NOT NULL THEN rm.site1 ELSE m.site1 END AS s1,
-                    CASE WHEN rm.site2 IS NOT NULL THEN rm.site2 ELSE m.site2 END AS s2, 
-                    rm.scores[1 + array_lower(rm.scores, 1) ]  AS sc,
-                     m.crosslinker_id AS cl,
+                    CASE WHEN rm.site2 IS NOT NULL THEN rm.site2 ELSE m.site2 END AS s2,
+                    rm.scores[$1 + array_lower(rm.scores, 1)] AS sc,
+                    m.crosslinker_id AS cl,
                     m.search_id AS si, m.calc_mass AS cm, m.assumed_prec_charge AS pc_c, m.assumed_prec_mz AS pc_mz,
                     ms.spectrum_id AS sp, rm.resultset_id AS rs_id,
                     s.precursor_intensity AS pc_i,
@@ -113,11 +148,11 @@ async def get_xiview_matches(project):
                     JOIN matchedspectrum as ms ON rm.match_id = ms.match_id
                     JOIN spectrum as s ON ms.spectrum_id = s.id
                     JOIN run as r ON s.run_id = r.id
-                    WHERE rm.resultset_id = ANY($1::uuid[])
+                    WHERE rm.resultset_id = ANY($2::uuid[])
                     AND m.site1 >0 AND m.site2 >0
                     AND rm.top_ranking = TRUE;"""
 
-    params = [[project] if isinstance(project, str) else project]
+    params = [main_score_index, resultset_ids]
     t0 = time.time()
     records = await execute_query(query, params)
     logger.info(f"get_xiview_matches: query took {time.time()-t0:.2f}s, {len(records)} rows")
