@@ -37,6 +37,7 @@ async def init_db_pool():
         min_size=10,
         max_size=30,
         command_timeout=300,
+        statement_cache_size=0,
         **db_info,
     )
     logger.info("asyncpg connection pool initialized (min=10, max=30)")
