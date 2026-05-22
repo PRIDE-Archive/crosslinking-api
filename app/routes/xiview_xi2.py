@@ -131,7 +131,7 @@ async def get_xiview_matches(project):
                 WHERE sn.resultset_id = ANY($1::uuid[]) AND sn.primary_score = TRUE
                 LIMIT 1;"""
     main_score = await execute_query(score_query, [resultset_ids], fetch_one=True)
-    main_score_index = main_score['score_index']
+    main_score_index = main_score['score_index'] if main_score else 0
 
     query = """SELECT m.id AS id, m.pep1_id AS pi1, m.pep2_id AS pi2,
                     CASE WHEN rm.site1 IS NOT NULL THEN rm.site1 ELSE m.site1 END AS s1,
@@ -140,16 +140,17 @@ async def get_xiview_matches(project):
                     m.crosslinker_id AS cl,
                     m.search_id AS si, m.calc_mass AS cm, m.assumed_prec_charge AS pc_c, m.assumed_prec_mz AS pc_mz,
                     ms.spectrum_id AS sp, rm.resultset_id AS rs_id,
+                    rm.resultset_id AS ui, rm.resultset_id AS sip,
                     s.precursor_intensity AS pc_i,
                     s.scan_number AS sn, s.scan_index AS sc_i,
                     s.retention_time AS rt, r.name AS run, s.peaklist_id AS plf
                 FROM ResultMatch AS rm
                     JOIN match AS m ON rm.search_id = m.search_id AND rm.match_id = m.id
-                    JOIN matchedspectrum as ms ON rm.match_id = ms.match_id
-                    JOIN spectrum as s ON ms.spectrum_id = s.id
-                    JOIN run as r ON s.run_id = r.id
-                    WHERE rm.resultset_id = ANY($2::uuid[])
-                    AND m.site1 >0 AND m.site2 >0
+                    JOIN matchedspectrum AS ms ON rm.match_id = ms.match_id
+                    JOIN spectrum AS s ON ms.spectrum_id = s.id
+                    JOIN run AS r ON s.run_id = r.id
+                WHERE rm.resultset_id = ANY($2::uuid[])
+                    AND m.site1 > 0 AND m.site2 > 0
                     AND rm.top_ranking = TRUE;"""
 
     params = [main_score_index, resultset_ids]
