@@ -36,7 +36,6 @@ async def init_db_pool():
     _db_pool = await asyncpg.create_pool(
         min_size=10,
         max_size=30,
-        command_timeout=300,
         statement_cache_size=0,
         **db_info,
     )
@@ -207,7 +206,7 @@ async def execute_query(query: str, params: Optional[List[Any]] = None, fetch_on
     if _db_pool is None:
         await init_db_pool()
     try:
-        async with _db_pool.acquire(timeout=300) as conn:
+        async with _db_pool.acquire() as conn:
             await conn.set_type_codec(
                 'json',
                 encoder=json.dumps,
@@ -215,9 +214,9 @@ async def execute_query(query: str, params: Optional[List[Any]] = None, fetch_on
                 schema='pg_catalog'
             )
             if fetch_one:
-                result = await conn.fetchrow(query, *(params or []), timeout=300)
+                result = await conn.fetchrow(query, *(params or []))
             else:
-                result = await conn.fetch(query, *(params or []), timeout=300)
+                result = await conn.fetch(query, *(params or []))
             return result
 
     except asyncio.TimeoutError:
