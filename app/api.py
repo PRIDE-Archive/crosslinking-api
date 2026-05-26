@@ -87,15 +87,3 @@ app.include_router(xiview_xi2_data_router, prefix="/xi2/data")
 app.include_router(parser_router, prefix="/pride/ws/archive/crosslinking/" + API_VERSION + "/parse")
 
 
-@app.get("/debug/db", include_in_schema=False)
-async def debug_db():
-    query = """SELECT pid, state, wait_event_type, wait_event,
-                      now() - query_start AS duration, query
-               FROM pg_stat_activity
-               WHERE state != 'idle'
-               ORDER BY duration DESC NULLS LAST;"""
-    import orjson
-    from fastapi.responses import Response
-    records = await execute_query(query)
-    return Response(orjson.dumps([dict(r) for r in records], default=str), media_type='application/json')
-
