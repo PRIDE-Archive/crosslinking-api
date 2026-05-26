@@ -31,7 +31,7 @@ async def lifespan(app):
 
 app = FastAPI(title="Crosslinking API",
               description="This is a REST API for accessing crosslinking data from the PRIDE Crosslinking resource.",
-              version="3.0.1",
+              version="3.0.2",
                 contact={
                   "name": "PRIDE Team",
                   "url": "https://www.ebi.ac.uk/pride/",
