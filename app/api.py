@@ -10,7 +10,7 @@ from app.routes.pdbdev import pdbdev_router
 from app.routes.xiview import xiview_data_router
 from app.routes.xiview_xi2 import xiview_xi2_data_router
 from app.routes.parse import parser_router
-from app.routes.shared import init_db_pool, close_db_pool, execute_query
+from app.routes.shared import init_db_pool, close_db_pool
 from fastapi.middleware.gzip import GZipMiddleware
 from db_config_parser import API_version
 
