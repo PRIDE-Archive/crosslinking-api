@@ -8,6 +8,7 @@ import logging
 from app.routes.pride import pride_router
 from app.routes.pdbdev import pdbdev_router
 from app.routes.xiview import xiview_data_router
+from app.routes.xiview_xi2 import xiview_xi2_data_router
 from app.routes.parse import parser_router
 from app.routes.shared import init_db_pool, close_db_pool
 from fastapi.middleware.gzip import GZipMiddleware
@@ -29,8 +30,8 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Crosslinking API",
-              description="This is a REST API for accessing crosslinking data from the PRIDE Crosslinkling resource.",
-              version="3.0.1",
+              description="This is a REST API for accessing crosslinking data from the PRIDE Crosslinking resource.",
+              version="3.0.2",
                 contact={
                   "name": "PRIDE Team",
                   "url": "https://www.ebi.ac.uk/pride/",
@@ -69,7 +70,7 @@ async def log_request_time(request: Request, call_next):
         response = await call_next(request)
     except Exception as e:
         process_time = time.time() - start_time
-        logger.error(f"Request: {request.method} {request.url.path} raised an error in {process_time:.4f} seconds: {str(e)}")
+        logger.error(f"Request: {request.method} {request.url.path} raised an error in {process_time:.4f} seconds: {str(e)}", exc_info=True)
         raise
     process_time = time.time() - start_time
     if not (request.url.path.startswith("/pride/ws/archive/crosslinking/" + API_VERSION + "/data/visualisations") or
@@ -82,5 +83,7 @@ app.include_router(pride_router, prefix="/pride/ws/archive/crosslinking/" + API_
 # app.include_router(pdbdev_router, prefix="/pride/ws/archive/crosslinking/" + API_VERSION + "/pdbdev", tags=["Deprecated: PDBDev"])
 app.include_router(pdbdev_router, prefix="/pride/ws/archive/crosslinking/" + API_VERSION + "/pdbihm", tags=["PDB-IHM"])
 app.include_router(xiview_data_router, prefix="/pride/ws/archive/crosslinking/" + API_VERSION + "/data")
+app.include_router(xiview_xi2_data_router, prefix="/xi2/data")
 app.include_router(parser_router, prefix="/pride/ws/archive/crosslinking/" + API_VERSION + "/parse")
+
 

@@ -1,9 +1,11 @@
+import asyncio
 import asyncpg
 import functools
 import json
 import logging
 import re
 import os
+import traceback
 import orjson
 import logging.config
 import time
@@ -34,6 +36,7 @@ async def init_db_pool():
     _db_pool = await asyncpg.create_pool(
         min_size=10,
         max_size=30,
+        statement_cache_size=0,
         **db_info,
     )
     logger.info("asyncpg connection pool initialized (min=10, max=30)")
@@ -216,8 +219,17 @@ async def execute_query(query: str, params: Optional[List[Any]] = None, fetch_on
                 result = await conn.fetch(query, *(params or []))
             return result
 
-    except Exception as e:
-        logging.error(f"Database operation failed: {e}")
+    except asyncio.TimeoutError:
+        logger.error(
+            "DB pool acquire timed out (pool exhausted) — all 30 connections busy\nCaller stack:\n%s",
+            ''.join(traceback.format_stack()[:-1])
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database busy")
+    except Exception:
+        logging.exception(
+            "Database operation failed\nCaller stack:\n%s",
+            ''.join(traceback.format_stack()[:-1])
+        )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Database operation failed")
 
 async def fetch_json_response(query, params):
