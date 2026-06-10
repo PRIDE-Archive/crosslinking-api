@@ -1,0 +1,47 @@
+variables:
+  DOCKER_PULL_SECRET: pride-gitlab-docker-secret
+  IMAGE: $CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG:$CI_COMMIT_SHA
+
+docker_build:
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+  image: docker:24.0.5
+  stage: build
+  services:
+    - docker:27.1.2-dind
+  script:
+    - apk add --update bash gettext tzdata coreutils wget curl
+    - cat Dockerfile
+    - echo $CI_REGISTRY_IMAGE $CI_COMMIT_REF_SLUG $CI_COMMIT_SHA
+    - envsubst < .envv > .env
+    - docker --debug info
+    - docker build -t $IMAGE .
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - docker push $IMAGE
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+
+# Deploy to cluster 44 (hh). Set CI/CD variables for environment prod-k8s-hh-44 (KUBE_CONFIG, k8s_namespace, etc.).
+kube_deploy_prod_hh_44:
+  environment: prod-k8s-hh-44
+  extends: .kube_deploy_script
+
+.kube_deploy_script:
+  stage: deploy
+  image: dtzar/helm-kubectl
+  script:
+    - apk add --update bash gettext tzdata coreutils
+    - mkdir -p ~/.kube
+    - echo $KUBE_CONFIG > kubeconfig
+    - base64 -d kubeconfig > ~/.kube/config
+    - kubectl config get-contexts
+    - kubectl create namespace $k8s_namespace || true
+    - kubectl -n $k8s_namespace delete secret $DOCKER_PULL_SECRET || true
+    - echo $CI_REGISTRY $CI_DEPLOY_USER
+    - kubectl -n $k8s_namespace create secret docker-registry $DOCKER_PULL_SECRET --docker-server=$CI_REGISTRY --docker-username=$CI_DEPLOY_USER --docker-password=$CI_DEPLOY_PASSWORD
+    - envsubst < .kubernetes.yml > kubernetes.yml
+    - kubectl -n $k8s_namespace apply -f kubernetes.yml
+  when: manual
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
