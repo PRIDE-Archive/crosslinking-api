@@ -18,8 +18,6 @@ docker_build:
     - docker build -t $IMAGE .
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
     - docker push $IMAGE
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
 
 
 # Deploy to cluster 44 (hh). Set CI/CD variables for environment prod-k8s-hh-44 (KUBE_CONFIG, k8s_namespace, etc.).
@@ -41,7 +39,5 @@ kube_deploy_prod_hh_44:
     - echo $CI_REGISTRY $CI_DEPLOY_USER
     - kubectl -n $k8s_namespace create secret docker-registry $DOCKER_PULL_SECRET --docker-server=$CI_REGISTRY --docker-username=$CI_DEPLOY_USER --docker-password=$CI_DEPLOY_PASSWORD
     - envsubst < .kubernetes.yml > kubernetes.yml
-    - kubectl -n $k8s_namespace apply -f kubernetes.yml
+    # - kubectl -n $k8s_namespace apply -f kubernetes.yml
   when: manual
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "main"'
