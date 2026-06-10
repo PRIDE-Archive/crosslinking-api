@@ -11,9 +11,9 @@ docker_build:
     - docker:27.1.2-dind
   script:
     - apk add --update bash gettext tzdata coreutils wget curl
+    - envsubst < .Dockerfile > Dockerfile
     - cat Dockerfile
     - echo $CI_REGISTRY_IMAGE $CI_COMMIT_REF_SLUG $CI_COMMIT_SHA
-    - envsubst < .envv > .env
     - docker --debug info
     - docker build -t $IMAGE .
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
@@ -29,15 +29,40 @@ kube_deploy_prod_hh_44:
   stage: deploy
   image: dtzar/helm-kubectl
   script:
+    # Install tools
     - apk add --update bash gettext tzdata coreutils
+    # Create kubeconfig
     - mkdir -p ~/.kube
     - echo $KUBE_CONFIG > kubeconfig
     - base64 -d kubeconfig > ~/.kube/config
     - kubectl config get-contexts
-    - kubectl create namespace $k8s_namespace || true
-    - kubectl -n $k8s_namespace delete secret $DOCKER_PULL_SECRET || true
+    # Create a Namespace if not exists 
+    - kubectl create namespace $K8S_NAMESPACE || true
+    # Delete the docker pull secrete if exist
+    - kubectl -n $K8S_NAMESPACE delete secret $DOCKER_PULL_SECRET || true
     - echo $CI_REGISTRY $CI_DEPLOY_USER
-    - kubectl -n $k8s_namespace create secret docker-registry $DOCKER_PULL_SECRET --docker-server=$CI_REGISTRY --docker-username=$CI_DEPLOY_USER --docker-password=$CI_DEPLOY_PASSWORD
+    # Create a Docker registry secret with new image
+    - kubectl -n $K8S_NAMESPACE create secret docker-registry $DOCKER_PULL_SECRET --docker-server=$CI_REGISTRY --docker-username=$CI_DEPLOY_USER --docker-password=$CI_DEPLOY_PASSWORD
+    # Substitute database variables by environment variables or variables
+    - envsubst < default.database.ini > database.ini
+    - cat database.ini
+    # Create ConfigMap for DATABASE_INI
+    - kubectl -n $K8S_NAMESPACE create configmap $DATABASE_INI --from-file=database.ini || true
+    # Replace configmap if it already exists for DATABASE_INI
+    - kubectl -n $K8S_NAMESPACE create configmap $DATABASE_INI --from-file=database.ini -o yaml --dry-run=client | kubectl replace -f -
+
+    # Create ConfigMap for Logging INI
+    - kubectl -n $K8S_NAMESPACE create configmap $LOGGING_INI --from-file=logging.ini || true
+
+    # Replace configmap if it already exists for Logging INI
+    - kubectl -n $K8S_NAMESPACE create configmap $LOGGING_INI --from-file=logging.ini -o yaml --dry-run=client | kubectl replace -f -
+
     - envsubst < .kubernetes.yml > kubernetes.yml
-    # - kubectl -n $k8s_namespace apply -f kubernetes.yml
+    - cat kubernetes.yml
+
+    # Deploy to Kubernetes
+    # - kubectl -n $K8S_NAMESPACE apply -f kubernetes.yml
+
+    # restart Pod in case if not pulling latest image
+    - kubectl rollout restart deploy $APP_NAME -n $K8S_NAMESPACE
   when: manual
