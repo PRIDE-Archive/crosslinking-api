@@ -64,5 +64,5 @@ kube_deploy_prod_hh_44:
     # - kubectl -n $K8S_NAMESPACE apply -f kubernetes.yml
 
     # restart Pod in case if not pulling latest image
-    - kubectl rollout restart deploy $APP_NAME -n $K8S_NAMESPACE
+    # - kubectl rollout restart deploy $APP_NAME -n $K8S_NAMESPACE
   when: manual
