@@ -59,10 +59,8 @@ kube_deploy_prod_hh_44:
     - kubectl -n $K8S_NAMESPACE create configmap $LOGGING_INI --from-file=logging.ini -o yaml --dry-run=client | kubectl replace -f -
     - envsubst < .kubernetes.yml > kubernetes.yml
     - cat kubernetes.yml
-
     # Deploy to Kubernetes
-    # - kubectl -n $K8S_NAMESPACE apply -f kubernetes.yml
-
+    - kubectl -n $K8S_NAMESPACE apply -f kubernetes.yml
     # restart Pod in case if not pulling latest image
-    # - kubectl rollout restart deploy $app_name -n $K8S_NAMESPACE
+    - kubectl rollout restart deploy $app_name -n $K8S_NAMESPACE
   when: manual
