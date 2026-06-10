@@ -10,11 +10,14 @@ docker_build:
   services:
     - docker:27.1.2-dind
   script:
+    # Install tools
     - apk add --update bash gettext tzdata coreutils wget curl
+    # Substitute variables in Dockerfile template and create Dockerfile
     - envsubst < .Dockerfile > Dockerfile
     - cat Dockerfile
     - echo $CI_REGISTRY_IMAGE $CI_COMMIT_REF_SLUG $CI_COMMIT_SHA
     - docker --debug info
+    # Build and push Docker image
     - docker build -t $IMAGE .
     - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
     - docker push $IMAGE
@@ -50,13 +53,10 @@ kube_deploy_prod_hh_44:
     - kubectl -n $K8S_NAMESPACE create configmap $DATABASE_INI --from-file=database.ini || true
     # Replace configmap if it already exists for DATABASE_INI
     - kubectl -n $K8S_NAMESPACE create configmap $DATABASE_INI --from-file=database.ini -o yaml --dry-run=client | kubectl replace -f -
-
     # Create ConfigMap for Logging INI
     - kubectl -n $K8S_NAMESPACE create configmap $LOGGING_INI --from-file=logging.ini || true
-
     # Replace configmap if it already exists for Logging INI
     - kubectl -n $K8S_NAMESPACE create configmap $LOGGING_INI --from-file=logging.ini -o yaml --dry-run=client | kubectl replace -f -
-
     - envsubst < .kubernetes.yml > kubernetes.yml
     - cat kubernetes.yml
 
@@ -64,5 +64,5 @@ kube_deploy_prod_hh_44:
     # - kubectl -n $K8S_NAMESPACE apply -f kubernetes.yml
 
     # restart Pod in case if not pulling latest image
-    # - kubectl rollout restart deploy $APP_NAME -n $K8S_NAMESPACE
+    # - kubectl rollout restart deploy $app_name -n $K8S_NAMESPACE
   when: manual
