@@ -51,6 +51,14 @@ spec:
           env:
             - name: DATABASE_INI_PATH
               value: /home/appuser/database.ini
+            - name: HTTP_PROXY
+              value: "http://$http_proxy_host:$http_proxy_port"
+            - name: HTTPS_PROXY
+              value: "http://$http_proxy_host:$http_proxy_port"
+            - name: http_proxy
+              value: "http://$http_proxy_host:$http_proxy_port"
+            - name: https_proxy
+              value: "http://$http_proxy_host:$http_proxy_port"
           volumeMounts:
             - name: application-db-config
               mountPath: /home/appuser/database.ini
@@ -60,6 +68,21 @@ spec:
               mountPath: /home/appuser/logging.ini
               subPath: logging.ini
               readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /pride/ws/archive/crosslinking/v3/health
+              port: $port
+            initialDelaySeconds: 60
+            periodSeconds: 100
+            timeoutSeconds: 120
+          readinessProbe:
+            httpGet:
+              path: /pride/ws/archive/crosslinking/v3/health
+              port: $port
+            initialDelaySeconds: 60
+            periodSeconds: 100
+            timeoutSeconds: 120
+
             # - name: cache-volume
             #   mountPath: /home/appuser/mzId_convertor_temp
 #            - name: xiview-api-prod-logs-volume
