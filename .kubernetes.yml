@@ -71,14 +71,14 @@ spec:
           livenessProbe:
             httpGet:
               path: /pride/ws/archive/crosslinking/v3/health
-              port: $port
+              port: $PORT
             initialDelaySeconds: 60
             periodSeconds: 100
             timeoutSeconds: 120
           readinessProbe:
             httpGet:
               path: /pride/ws/archive/crosslinking/v3/health
-              port: $port
+              port: $PORT
             initialDelaySeconds: 60
             periodSeconds: 100
             timeoutSeconds: 120
