@@ -595,7 +595,7 @@ async def project_search(q: Union[str | None] = Query(default="",
 
     project_search_sql = text(f"""
                 SELECT p.id FROM projectdetails p
-                JOIN public.projectsubdetails ps ON p.id = ps.project_detail_id
+                JOIN projectsubdetails ps ON p.id = ps.project_detail_id
                 {where_condition}
                ORDER BY id
            """)
@@ -604,7 +604,7 @@ async def project_search(q: Union[str | None] = Query(default="",
 
     # project_search_sql = text("""
     #     SELECT p.id FROM projectdetails p
-    # JOIN public.projectsubdetails ps ON p.id = ps.project_detail_id
+    # JOIN projectsubdetails ps ON p.id = ps.project_detail_id
     # WHERE p.project_id = :query OR
     #       p.title ILIKE '%' || :query || '%' OR
     #       p.description ILIKE '%' || :query || '%' OR
