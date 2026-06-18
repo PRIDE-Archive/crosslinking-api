@@ -75,6 +75,7 @@ jobs:
       REDIS_HOST: ${{ vars.REDIS_HOST }}
       REDIS_PORT: ${{ vars.REDIS_PORT }}
       REDIS_PASSWORD: ${{ vars.REDIS_PASSWORD }}
+      REDIS_CLUSTER: ${{ vars.REDIS_CLUSTER }}
       PEPTIDE_PER_PROTEIN: ${{ vars.PEPTIDE_PER_PROTEIN }}
 
     steps:

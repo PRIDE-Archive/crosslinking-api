@@ -68,15 +68,50 @@ async def _parse_database_info():
 
 # Shared Redis connection pool (lazy-initialized)
 _redis_pool: Optional[redis.ConnectionPool] = None
+_redis_cluster_client = None
 _XIVIEW_CACHE_TTL = 43200  # 12 hours in seconds
 
 
-def _get_redis_client() -> Optional[redis.Redis]:
-    """Get a Redis client using a shared connection pool."""
-    global _redis_pool
+def _is_redis_cluster(redis_cfg) -> bool:
+    """True when the [redis] config enables cluster mode."""
+    return str(redis_cfg.get('cluster', '')).strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+def build_redis_client(redis_cfg, decode_responses: bool = False):
+    """Build a Redis client from a config dict.
+
+    When `cluster=true` is set in the [redis] config section, returns a
+    RedisCluster client which follows MOVED/ASK slot redirects. Otherwise
+    returns a standalone client. The standalone client raises MovedError
+    (string "<slot> <host>:<port>") against a clustered Redis.
+    """
+    host = redis_cfg['host']
+    port = int(redis_cfg['port'])
+    password = redis_cfg.get('password') or None
+    if _is_redis_cluster(redis_cfg):
+        from redis.cluster import RedisCluster
+        return RedisCluster(host=host, port=port, password=password,
+                            decode_responses=decode_responses)
+    return redis.Redis(host=host, port=port, password=password,
+                       decode_responses=decode_responses)
+
+
+def _get_redis_client():
+    """Get a shared Redis client (cluster-aware), or None if unavailable."""
+    global _redis_pool, _redis_cluster_client
     try:
+        redis_cfg = get_redis_config()
+        if _is_redis_cluster(redis_cfg):
+            if _redis_cluster_client is None:
+                from redis.cluster import RedisCluster
+                _redis_cluster_client = RedisCluster(
+                    host=redis_cfg['host'],
+                    port=int(redis_cfg['port']),
+                    password=redis_cfg.get('password') or None,
+                    decode_responses=False,
+                )
+            return _redis_cluster_client
         if _redis_pool is None:
-            redis_cfg = get_redis_config()
             _redis_pool = redis.ConnectionPool(
                 host=redis_cfg['host'],
                 port=int(redis_cfg['port']),

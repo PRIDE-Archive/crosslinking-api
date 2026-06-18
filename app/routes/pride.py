@@ -7,7 +7,6 @@ import time
 from math import ceil
 from typing import List, Annotated, Union
 
-import redis
 import requests
 from fastapi import APIRouter, Depends, status, Query, Path, UploadFile, File
 from fastapi import HTTPException, Security
@@ -31,7 +30,7 @@ from models.spectradata import SpectraData
 from models.match import Match
 from models.spectrumidentificationprotocol import SpectrumIdentificationProtocol
 
-from app.routes.shared import get_api_key
+from app.routes.shared import get_api_key, build_redis_client
 from db_config_parser import redis_config
 from index import get_session
 from parser.process_dataset import convert_pxd_accession_from_pride
@@ -866,12 +865,10 @@ async def peptide_per_protein(session: Session = Depends(get_session),
     :param redis_config_param: Redis in-memory database configurations
     :return:  Number of peptides per protein frequency as a dictionary
     """
+    values = None
     try:
         key = redis_config_param['peptide_per_protein']
-        redis_client = redis.Redis(host=redis_config_param['host'],
-                                   port=redis_config_param['port'],
-                                   password=redis_config_param['password'],
-                                   decode_responses=False)
+        redis_client = build_redis_client(redis_config_param, decode_responses=False)
         if redis_client is not None and redis_client.exists(key):
             # If data exists in Redis, retrieve it
             values = redis_client.get(key)
@@ -959,10 +956,7 @@ async def peptide_per_protein(session: Session = Depends(get_session),
 
 
 def invalidate_cache(redis_config_param=Depends(redis_config)):
-    redis_client = redis.Redis(host=redis_config_param['host'],
-                               port=redis_config_param['port'],
-                               password=redis_config_param['password'],
-                               decode_responses=False)
+    redis_client = build_redis_client(redis_config_param, decode_responses=False)
     key = redis_config_param['peptide_per_protein']
     redis_client.delete(key)
     return None
@@ -1074,10 +1068,7 @@ async def recalculate_stats(
     - Clears xiVIEW data caches (matches, peptides, proteins)
     - Triggers recalculation by calling the stats endpoints
     """
-    redis_client = redis.Redis(host=redis_config_param['host'],
-                               port=redis_config_param['port'],
-                               password=redis_config_param['password'],
-                               decode_responses=False)
+    redis_client = build_redis_client(redis_config_param, decode_responses=False)
 
     cleared_keys = []
     errors = []
@@ -1176,10 +1167,7 @@ async def labhead_count(session: Session = Depends(get_session),
     values = None
     try:
         key = redis_config_param.get('labhead_count', 'labhead_count')
-        redis_client = redis.Redis(host=redis_config_param['host'],
-                                   port=redis_config_param['port'],
-                                   password=redis_config_param['password'],
-                                   decode_responses=False)
+        redis_client = build_redis_client(redis_config_param, decode_responses=False)
         if redis_client is not None and redis_client.exists(key):
             values = redis_client.get(key)
             return json.loads(values)
