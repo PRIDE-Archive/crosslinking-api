@@ -866,6 +866,7 @@ async def peptide_per_protein(session: Session = Depends(get_session),
     :param redis_config_param: Redis in-memory database configurations
     :return:  Number of peptides per protein frequency as a dictionary
     """
+    values = None
     try:
         key = redis_config_param['peptide_per_protein']
         redis_client = redis.Redis(host=redis_config_param['host'],
