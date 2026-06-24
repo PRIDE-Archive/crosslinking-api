@@ -1135,12 +1135,12 @@ async def recalculate_stats(
     except Exception as e:
         errors.append(f"Failed to recalculate peptide_per_protein: {e}")
 
-    # Recalculate labhead_count
-    try:
-        await labhead_count(session=session, redis_config_param=redis_config_param)
-        recalculated.append("labhead_count")
-    except Exception as e:
-        errors.append(f"Failed to recalculate labhead_count: {e}")
+    # Recalculate labhead_count (DISABLED — PROXI fetching turned off)
+    # try:
+    #     await labhead_count(session=session, redis_config_param=redis_config_param)
+    #     recalculated.append("labhead_count")
+    # except Exception as e:
+    #     errors.append(f"Failed to recalculate labhead_count: {e}")
 
     return {
         "status": "completed",
@@ -1184,19 +1184,20 @@ async def labhead_count(session: Session = Depends(get_session),
             list_of_project_id = await get_accessions(sql_project_accession_list, {}, session)
 
             labhead_set = set()
-            proxi_base_url = "https://proteomecentral.proteomexchange.org/api/proxi/v0.1/datasets/"
-            # Bypass the pod's HTTP(S)_PROXY env vars (hh-wwwcache.ebi.ac.uk is
-            # unreachable on this cluster); connect to PROXI directly.
-            proxi_session = requests.Session()
-            proxi_session.trust_env = False
-            for project_id in list_of_project_id:
-                try:
-                    response = proxi_session.get(proxi_base_url + project_id, timeout=(5, 30))
-                    if response.status_code == 200:
-                        names = _extract_labheads_from_proxi(response.json())
-                        labhead_set.update(names)
-                except Exception as e:
-                    logger.warning(f"Failed to fetch PROXI data for {project_id}: {e}")
+            # PROXI fetching DISABLED — no outbound calls to ProteomeXchange.
+            # proxi_base_url = "https://proteomecentral.proteomexchange.org/api/proxi/v0.1/datasets/"
+            # # Bypass the pod's HTTP(S)_PROXY env vars (hh-wwwcache.ebi.ac.uk is
+            # # unreachable on this cluster); connect to PROXI directly.
+            # proxi_session = requests.Session()
+            # proxi_session.trust_env = False
+            # for project_id in list_of_project_id:
+            #     try:
+            #         response = proxi_session.get(proxi_base_url + project_id, timeout=(5, 30))
+            #         if response.status_code == 200:
+            #             names = _extract_labheads_from_proxi(response.json())
+            #             labhead_set.update(names)
+            #     except Exception as e:
+            #         logger.warning(f"Failed to fetch PROXI data for {project_id}: {e}")
 
             values = {
                 "labhead_count": len(labhead_set)
