@@ -10,7 +10,7 @@ import orjson
 import logging.config
 import time
 
-import redis
+# import redis  # Redis caching disabled
 from configparser import ConfigParser
 from fastapi import status, HTTPException, Security, Response
 from fastapi.responses import ORJSONResponse
@@ -66,90 +66,96 @@ async def _parse_database_info():
     return db
 
 
+# ---------------------------------------------------------------------------
+# Redis caching DISABLED. All Redis code below is commented out; the cache
+# helpers are no-ops so endpoints always compute fresh.
+# ---------------------------------------------------------------------------
 # Shared Redis connection pool (lazy-initialized)
-_redis_pool: Optional[redis.ConnectionPool] = None
-_redis_cluster_client = None
-_XIVIEW_CACHE_TTL = 43200  # 12 hours in seconds
+# _redis_pool: Optional[redis.ConnectionPool] = None
+# _redis_cluster_client = None
+_XIVIEW_CACHE_TTL = 43200  # 12 hours in seconds (kept for signature compatibility)
 
 
-def _is_redis_cluster(redis_cfg) -> bool:
-    """True when the [redis] config enables cluster mode."""
-    return str(redis_cfg.get('cluster', '')).strip().lower() in ('1', 'true', 'yes', 'on')
+# def _is_redis_cluster(redis_cfg) -> bool:
+#     """True when the [redis] config enables cluster mode."""
+#     return str(redis_cfg.get('cluster', '')).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
-def build_redis_client(redis_cfg, decode_responses: bool = False):
-    """Build a Redis client from a config dict.
+# def build_redis_client(redis_cfg, decode_responses: bool = False):
+#     """Build a Redis client from a config dict.
+#
+#     When `cluster=true` is set in the [redis] config section, returns a
+#     RedisCluster client which follows MOVED/ASK slot redirects. Otherwise
+#     returns a standalone client. The standalone client raises MovedError
+#     (string "<slot> <host>:<port>") against a clustered Redis.
+#     """
+#     host = redis_cfg['host']
+#     port = int(redis_cfg['port'])
+#     password = redis_cfg.get('password') or None
+#     if _is_redis_cluster(redis_cfg):
+#         from redis.cluster import RedisCluster
+#         return RedisCluster(host=host, port=port, password=password,
+#                             decode_responses=decode_responses)
+#     return redis.Redis(host=host, port=port, password=password,
+#                        decode_responses=decode_responses)
 
-    When `cluster=true` is set in the [redis] config section, returns a
-    RedisCluster client which follows MOVED/ASK slot redirects. Otherwise
-    returns a standalone client. The standalone client raises MovedError
-    (string "<slot> <host>:<port>") against a clustered Redis.
-    """
-    host = redis_cfg['host']
-    port = int(redis_cfg['port'])
-    password = redis_cfg.get('password') or None
-    if _is_redis_cluster(redis_cfg):
-        from redis.cluster import RedisCluster
-        return RedisCluster(host=host, port=port, password=password,
-                            decode_responses=decode_responses)
-    return redis.Redis(host=host, port=port, password=password,
-                       decode_responses=decode_responses)
 
-
-def _get_redis_client():
-    """Get a shared Redis client (cluster-aware), or None if unavailable."""
-    global _redis_pool, _redis_cluster_client
-    try:
-        redis_cfg = get_redis_config()
-        if _is_redis_cluster(redis_cfg):
-            if _redis_cluster_client is None:
-                from redis.cluster import RedisCluster
-                _redis_cluster_client = RedisCluster(
-                    host=redis_cfg['host'],
-                    port=int(redis_cfg['port']),
-                    password=redis_cfg.get('password') or None,
-                    decode_responses=False,
-                )
-            return _redis_cluster_client
-        if _redis_pool is None:
-            _redis_pool = redis.ConnectionPool(
-                host=redis_cfg['host'],
-                port=int(redis_cfg['port']),
-                password=redis_cfg.get('password'),
-                max_connections=20,
-                decode_responses=False,
-            )
-        return redis.Redis(connection_pool=_redis_pool)
-    except Exception as e:
-        logger.warning(f"Redis unavailable, skipping cache: {e}")
-        return None
+# def _get_redis_client():
+#     """Get a shared Redis client (cluster-aware), or None if unavailable."""
+#     global _redis_pool, _redis_cluster_client
+#     try:
+#         redis_cfg = get_redis_config()
+#         if _is_redis_cluster(redis_cfg):
+#             if _redis_cluster_client is None:
+#                 from redis.cluster import RedisCluster
+#                 _redis_cluster_client = RedisCluster(
+#                     host=redis_cfg['host'],
+#                     port=int(redis_cfg['port']),
+#                     password=redis_cfg.get('password') or None,
+#                     decode_responses=False,
+#                 )
+#             return _redis_cluster_client
+#         if _redis_pool is None:
+#             _redis_pool = redis.ConnectionPool(
+#                 host=redis_cfg['host'],
+#                 port=int(redis_cfg['port']),
+#                 password=redis_cfg.get('password'),
+#                 max_connections=20,
+#                 decode_responses=False,
+#             )
+#         return redis.Redis(connection_pool=_redis_pool)
+#     except Exception as e:
+#         logger.warning(f"Redis unavailable, skipping cache: {e}")
+#         return None
 
 
 def get_cached_response(cache_key: str) -> Optional[bytes]:
-    """Try to get a cached response from Redis."""
-    client = _get_redis_client()
-    if client is None:
-        return None
-    try:
-        data = client.get(cache_key)
-        if data:
-            logger.info(f"Cache HIT for {cache_key}")
-        return data
-    except Exception as e:
-        logger.warning(f"Redis get failed for {cache_key}: {e}")
-        return None
+    """Redis disabled — always a cache miss."""
+    return None
+    # client = _get_redis_client()
+    # if client is None:
+    #     return None
+    # try:
+    #     data = client.get(cache_key)
+    #     if data:
+    #         logger.info(f"Cache HIT for {cache_key}")
+    #     return data
+    # except Exception as e:
+    #     logger.warning(f"Redis get failed for {cache_key}: {e}")
+    #     return None
 
 
 def set_cached_response(cache_key: str, data: bytes, ttl: int = _XIVIEW_CACHE_TTL):
-    """Store a response in Redis with TTL."""
-    client = _get_redis_client()
-    if client is None:
-        return
-    try:
-        client.setex(cache_key, ttl, data)
-        logger.info(f"Cache SET for {cache_key} (TTL={ttl}s)")
-    except Exception as e:
-        logger.warning(f"Redis set failed for {cache_key}: {e}")
+    """Redis disabled — no-op."""
+    return
+    # client = _get_redis_client()
+    # if client is None:
+    #     return
+    # try:
+    #     client.setex(cache_key, ttl, data)
+    #     logger.info(f"Cache SET for {cache_key} (TTL={ttl}s)")
+    # except Exception as e:
+    #     logger.warning(f"Redis set failed for {cache_key}: {e}")
 
 
 def build_xiview_cache_key(endpoint: str, project: str, file: Optional[str] = None) -> str:

@@ -30,7 +30,7 @@ from models.spectradata import SpectraData
 from models.match import Match
 from models.spectrumidentificationprotocol import SpectrumIdentificationProtocol
 
-from app.routes.shared import get_api_key, build_redis_client
+from app.routes.shared import get_api_key  # build_redis_client (Redis disabled)
 from db_config_parser import redis_config
 from index import get_session
 from parser.process_dataset import convert_pxd_accession_from_pride
@@ -867,13 +867,15 @@ async def peptide_per_protein(session: Session = Depends(get_session),
     """
     values = None
     try:
-        key = redis_config_param['peptide_per_protein']
-        redis_client = build_redis_client(redis_config_param, decode_responses=False)
-        if redis_client is not None and redis_client.exists(key):
-            # If data exists in Redis, retrieve it
-            values = redis_client.get(key)
-            return json.loads(values)
-        else:
+        # Redis caching disabled — always fetch fresh from the database
+        # key = redis_config_param['peptide_per_protein']
+        # redis_client = build_redis_client(redis_config_param, decode_responses=False)
+        # if redis_client is not None and redis_client.exists(key):
+        #     # If data exists in Redis, retrieve it
+        #     values = redis_client.get(key)
+        #     return json.loads(values)
+        # else:
+        if True:
             # If data doesn't exist in Redis, fetch it from the database
             sql_peptides_per_protein = text("""
                             WITH frequencytable AS (
@@ -944,9 +946,9 @@ async def peptide_per_protein(session: Session = Depends(get_session),
                     """)
             values = await peptide_per_protein_counts(sql_peptides_per_protein, None, session)
 
-            # Store the data in Redis for future use
+            # Store the data in Redis for future use (Redis disabled)
             if values:
-                redis_client.set(key, json.dumps(values))
+                # redis_client.set(key, json.dumps(values))
                 return values
             else:
                 return None
@@ -956,9 +958,10 @@ async def peptide_per_protein(session: Session = Depends(get_session),
 
 
 def invalidate_cache(redis_config_param=Depends(redis_config)):
-    redis_client = build_redis_client(redis_config_param, decode_responses=False)
-    key = redis_config_param['peptide_per_protein']
-    redis_client.delete(key)
+    # Redis caching disabled — no-op
+    # redis_client = build_redis_client(redis_config_param, decode_responses=False)
+    # key = redis_config_param['peptide_per_protein']
+    # redis_client.delete(key)
     return None
 
 
@@ -1068,39 +1071,40 @@ async def recalculate_stats(
     - Clears xiVIEW data caches (matches, peptides, proteins)
     - Triggers recalculation by calling the stats endpoints
     """
-    redis_client = build_redis_client(redis_config_param, decode_responses=False)
+    # Redis caching disabled — no cache client / cache clearing
+    # redis_client = build_redis_client(redis_config_param, decode_responses=False)
 
     cleared_keys = []
     errors = []
 
-    # 1. Clear statistics caches
-    stats_keys = [
-        redis_config_param.get('peptide_per_protein', 'peptide_per_protein'),
-        redis_config_param.get('labhead_count', 'labhead_count'),
-    ]
-    for key in stats_keys:
-        try:
-            redis_client.delete(key)
-            cleared_keys.append(str(key))
-        except Exception as e:
-            errors.append(f"Failed to delete key {key}: {e}")
+    # 1. Clear statistics caches (Redis disabled)
+    # stats_keys = [
+    #     redis_config_param.get('peptide_per_protein', 'peptide_per_protein'),
+    #     redis_config_param.get('labhead_count', 'labhead_count'),
+    # ]
+    # for key in stats_keys:
+    #     try:
+    #         redis_client.delete(key)
+    #         cleared_keys.append(str(key))
+    #     except Exception as e:
+    #         errors.append(f"Failed to delete key {key}: {e}")
 
-    # 2. Clear xiVIEW caches
-    try:
-        if project_id:
-            # Clear only the specified project
-            for endpoint in ['matches', 'peptides', 'proteins']:
-                pattern = f"xiview:{endpoint}:{project_id}*"
-                for key in redis_client.scan_iter(match=pattern):
-                    redis_client.delete(key)
-                    cleared_keys.append(key.decode() if isinstance(key, bytes) else str(key))
-        else:
-            # Clear all xiVIEW caches
-            for key in redis_client.scan_iter(match="xiview:*"):
-                redis_client.delete(key)
-                cleared_keys.append(key.decode() if isinstance(key, bytes) else str(key))
-    except Exception as e:
-        errors.append(f"Failed to clear xiVIEW cache: {e}")
+    # 2. Clear xiVIEW caches (Redis disabled)
+    # try:
+    #     if project_id:
+    #         # Clear only the specified project
+    #         for endpoint in ['matches', 'peptides', 'proteins']:
+    #             pattern = f"xiview:{endpoint}:{project_id}*"
+    #             for key in redis_client.scan_iter(match=pattern):
+    #                 redis_client.delete(key)
+    #                 cleared_keys.append(key.decode() if isinstance(key, bytes) else str(key))
+    #     else:
+    #         # Clear all xiVIEW caches
+    #         for key in redis_client.scan_iter(match="xiview:*"):
+    #             redis_client.delete(key)
+    #             cleared_keys.append(key.decode() if isinstance(key, bytes) else str(key))
+    # except Exception as e:
+    #     errors.append(f"Failed to clear xiVIEW cache: {e}")
 
     # 3. Recalculate projectdetails (number_of_proteins, number_of_peptides, number_of_spectra)
     recalculated = []
@@ -1166,12 +1170,14 @@ async def labhead_count(session: Session = Depends(get_session),
                         redis_config_param=Depends(redis_config)):
     values = None
     try:
-        key = redis_config_param.get('labhead_count', 'labhead_count')
-        redis_client = build_redis_client(redis_config_param, decode_responses=False)
-        if redis_client is not None and redis_client.exists(key):
-            values = redis_client.get(key)
-            return json.loads(values)
-        else:
+        # Redis caching disabled — always compute fresh
+        # key = redis_config_param.get('labhead_count', 'labhead_count')
+        # redis_client = build_redis_client(redis_config_param, decode_responses=False)
+        # if redis_client is not None and redis_client.exists(key):
+        #     values = redis_client.get(key)
+        #     return json.loads(values)
+        # else:
+        if True:
             sql_project_accession_list = text("""
                 SELECT DISTINCT u.project_id FROM upload u
             """)
@@ -1181,7 +1187,7 @@ async def labhead_count(session: Session = Depends(get_session),
             proxi_base_url = "https://proteomecentral.proteomexchange.org/api/proxi/v0.1/datasets/"
             for project_id in list_of_project_id:
                 try:
-                    response = requests.get(proxi_base_url + project_id, timeout=30)
+                    response = requests.get(proxi_base_url + project_id, timeout=(5, 30))
                     if response.status_code == 200:
                         names = _extract_labheads_from_proxi(response.json())
                         labhead_set.update(names)
@@ -1193,7 +1199,7 @@ async def labhead_count(session: Session = Depends(get_session),
             }
 
             if values:
-                redis_client.set(key, json.dumps(values))
+                # redis_client.set(key, json.dumps(values))
                 return values
             else:
                 return None
