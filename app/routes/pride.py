@@ -1185,9 +1185,13 @@ async def labhead_count(session: Session = Depends(get_session),
 
             labhead_set = set()
             proxi_base_url = "https://proteomecentral.proteomexchange.org/api/proxi/v0.1/datasets/"
+            # Bypass the pod's HTTP(S)_PROXY env vars (hh-wwwcache.ebi.ac.uk is
+            # unreachable on this cluster); connect to PROXI directly.
+            proxi_session = requests.Session()
+            proxi_session.trust_env = False
             for project_id in list_of_project_id:
                 try:
-                    response = requests.get(proxi_base_url + project_id, timeout=(5, 30))
+                    response = proxi_session.get(proxi_base_url + project_id, timeout=(5, 30))
                     if response.status_code == 200:
                         names = _extract_labheads_from_proxi(response.json())
                         labhead_set.update(names)
