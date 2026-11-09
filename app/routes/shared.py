@@ -281,4 +281,8 @@ async def fetch_json_response(query, params):
     :return: the JSON response
     """
     records = await execute_query(query, params)
-    return ORJSONResponse([dict(r) for r in records])
+    # default=str so non-native types (e.g. asyncpg UUID) serialize instead of raising
+    return Response(
+        orjson.dumps([dict(r) for r in records], default=str),
+        media_type='application/json',
+    )
