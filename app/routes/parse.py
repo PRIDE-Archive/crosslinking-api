@@ -97,7 +97,6 @@ def write_new_upload(
         api_key: str = Security(get_api_key),
         session: Session = Depends(get_session)):
     try:
-        print("called write_new_upload!!!")
         new_upload = Upload(
             identification_file_name=data['identification_file_name'],
             identification_file_name_clean=data['identification_file_name_clean'],
@@ -108,8 +107,11 @@ def write_new_upload(
         session.close()
         return new_upload.id
     except Exception as e:
-        print(f"Error: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        session.rollback() 
+        # Log the full traceback server-side and surface the real cause to the
+        # caller (internal, API-key-protected endpoint) instead of a bare 500.
+        logger.exception("write_new_upload failed for %s", data.get('identification_file_name'))
+        raise HTTPException(status_code=500, detail=f"write_new_upload failed: {type(e).__name__}: {e}")
 
 
 @parser_router.post("/write_mzid_info", tags=["Parser"])

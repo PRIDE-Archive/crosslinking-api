@@ -1178,12 +1178,15 @@ async def labhead_count(session: Session = Depends(get_session),
         #     return json.loads(values)
         # else:
         if True:
-            sql_project_accession_list = text("""
-                SELECT DISTINCT u.project_id FROM upload u
-            """)
-            list_of_project_id = await get_accessions(sql_project_accession_list, {}, session)
+            return {"labhead_count": 18} # until fix 
+            # sql_project_accession_list = text("""
+            #     SELECT DISTINCT u.project_id FROM upload u
+            # """)
+            # list_of_project_id = await get_accessions(sql_project_accession_list, {}, session)
 
-            labhead_set = set()
+            # labhead_set = set()
+            # Hard-coded labhead count (PROXI fetching disabled — see below).
+            return {"labhead_count": 18}
             # PROXI fetching DISABLED — no outbound calls to ProteomeXchange.
             # proxi_base_url = "https://proteomecentral.proteomexchange.org/api/proxi/v0.1/datasets/"
             # # Bypass the pod's HTTP(S)_PROXY env vars (hh-wwwcache.ebi.ac.uk is
