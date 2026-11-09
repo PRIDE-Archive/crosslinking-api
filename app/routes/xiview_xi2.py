@@ -23,6 +23,22 @@ xiview_xi2_data_router = APIRouter(include_in_schema=False)
 logger = logging.getLogger(__name__)
 
 
+def _parse_resultset_ids(uuid: List[str]) -> List[str]:
+    """
+    Parse resultset UUIDs from the uuid query param(s). Accepts repeated params and/or the
+    aggregated form "<uuid>~<group>.<uuid>~<group>..." (group labels are for xiVIEW only).
+    Returns de-duplicated UUIDs in order of first appearance.
+    """
+    ids = []
+    try:
+        for value in uuid:
+            for part in value.split('.'):
+                ids.append(str(UUID(part.split('~', 1)[0])))
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid uuid")
+    return list(dict.fromkeys(ids))
+
+
 @xiview_xi2_data_router.get('/get_peaklist', tags=["xiVIEW"])
 async def get_peaklist(id, sd_ref=None, upload_id=None):
     # xi2 peaks live in spectrumpeaks (mz/intensity are native float arrays),
@@ -69,7 +85,7 @@ async def get_xiview_analysis_collection_spectrum_identifications():
 
 @log_execution_time_async
 @xiview_xi2_data_router.get('/get_xiview_spectrum_identification_protocols', tags=["xiVIEW"])
-async def get_xiview_spectrum_identification_protocols(uuid):
+async def get_xiview_spectrum_identification_protocols(uuid: List[str] = Query(...)):
     """
     Get search config info (resultset + search metadata) for the given resultset UUIDs.
 
@@ -77,7 +93,7 @@ async def get_xiview_spectrum_identification_protocols(uuid):
     """
     logger.info(f"get_xiview_spectrum_identification_protocols for {uuid}")
 
-    resultset_ids = [uuid] if isinstance(uuid, str) else uuid
+    resultset_ids = _parse_resultset_ids(uuid)
 
     query = """SELECT rs.name AS rs_name, rs.note AS rs_note, rs.config AS rs_config,
                     rs.main_score AS rs_main_score, rst.name AS resultset_type,
@@ -107,7 +123,7 @@ async def get_xiview_spectrum_identification_protocols(uuid):
 
 @log_execution_time_async
 @xiview_xi2_data_router.get('/get_xiview_spectra_data', tags=["xiVIEW"])
-async def get_xiview_spectra_data(uuid):
+async def get_xiview_spectra_data(uuid: List[str] = Query(...)):
     """
     Get the peaklist (spectra source) files referenced by the given resultset UUIDs.
 
@@ -119,7 +135,7 @@ async def get_xiview_spectra_data(uuid):
     """
     logger.info(f"get_xiview_spectra_data for {uuid}")
 
-    resultset_ids = [uuid] if isinstance(uuid, str) else uuid
+    resultset_ids = _parse_resultset_ids(uuid)
 
     query = """SELECT rse.resultset_id AS upload_id, pl.id, pl.name
                 FROM peaklist AS pl
@@ -142,7 +158,7 @@ async def get_xiview_search_modifications():
 
 @log_execution_time_async
 @xiview_xi2_data_router.get('/get_xiview_matches', tags=["xiVIEW"])
-async def get_xiview_matches(uuid):
+async def get_xiview_matches(uuid: List[str] = Query(...)):
     """
     Get the passing matches.
 
@@ -150,7 +166,7 @@ async def get_xiview_matches(uuid):
     """
     logger.info(f"get_xiview_matches for {uuid}")
 
-    resultset_ids = [uuid] if isinstance(uuid, str) else uuid
+    resultset_ids = _parse_resultset_ids(uuid)
 
     # cache_key = build_xiview_cache_key("xi2_matches", project if isinstance(project, str) else ",".join(project))
     # cached = get_cached_response(cache_key)
@@ -203,7 +219,7 @@ async def get_xiview_matches(uuid):
 
 @log_execution_time_async
 @xiview_xi2_data_router.get('/get_xiview_peptides', tags=["xiVIEW"])
-async def get_xiview_peptides(uuid):
+async def get_xiview_peptides(uuid: List[str] = Query(...)):
     """
     Get the peptides referenced by top-ranking matches for the given resultset UUIDs.
 
@@ -242,7 +258,7 @@ async def get_xiview_peptides(uuid):
                 JOIN peptideposition pp ON pp.mod_pep_id = mp.id AND pp.search_id = mp.search_id
                 GROUP BY mp.id, mp.search_id, mp.sequence, mp.modification_ids, mp.modification_position;"""
 
-    params = [[uuid] if isinstance(uuid, str) else uuid]
+    params = [_parse_resultset_ids(uuid)]
     t0 = time.time()
     records = await execute_query(query, params)
     logger.info(f"get_xiview_peptides: query took {time.time()-t0:.2f}s, {len(records)} rows")
@@ -255,7 +271,7 @@ async def get_xiview_peptides(uuid):
 
 @log_execution_time_async
 @xiview_xi2_data_router.get('/get_xiview_proteins', tags=["xiVIEW"])
-async def get_xiview_proteins(uuid):
+async def get_xiview_proteins(uuid: List[str] = Query(...)):
     """
     Get the proteins referenced by top-ranking matches for the given resultset UUIDs.
 
@@ -295,7 +311,7 @@ async def get_xiview_proteins(uuid):
                 FROM protein p
                 JOIN protein_ids x ON p.search_id = x.search_id AND p.id = x.protein_id;"""
 
-    params = [[uuid] if isinstance(uuid, str) else uuid]
+    params = [_parse_resultset_ids(uuid)]
     t0 = time.time()
     records = await execute_query(query, params)
     logger.info(f"get_xiview_proteins: query took {time.time()-t0:.2f}s, {len(records)} rows")
@@ -360,10 +376,7 @@ NO_STORE = {"Cache-Control": "no-store"}
 
 def _normalise_resultset_ids(uuid: List[str]) -> List[str]:
     """Sort and de-duplicate, so the same datasets in any URL order share configs."""
-    try:
-        return sorted({str(UUID(u)) for u in uuid})
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid uuid")
+    return sorted(_parse_resultset_ids(uuid))
 
 
 @xiview_xi2_data_router.get('/configs', tags=["xiVIEW"])
