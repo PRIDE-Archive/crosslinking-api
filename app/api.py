@@ -31,7 +31,7 @@ async def lifespan(app):
 
 app = FastAPI(title="Crosslinking API",
               description="This is a REST API for accessing crosslinking data from the PRIDE Crosslinking resource.",
-              version="3.0.2",
+              version="3.1.0",
                 contact={
                   "name": "PRIDE Team",
                   "url": "https://www.ebi.ac.uk/pride/",
@@ -60,6 +60,30 @@ app.add_middleware(
 # Do not GZip responses that are smaller than this minimum size in bytes,
 # Tier 4 Network level compression, no need to worry at Tier 7(HTTPS) level
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+
+# Browser caching for xiVIEW data endpoints (PRIDE and xi2) - the data for a given query never changes.
+# Not applied to listings that grow (visualisations, get_datasets) or to POSTs (get_annotated_peaklist).
+# Kept to a week rather than longer so changes to the API's output format reach browsers reasonably soon.
+XIVIEW_DATA_PREFIXES = ("/pride/ws/archive/crosslinking/" + API_VERSION + "/data/", "/xi2/data/")
+XIVIEW_CACHE_CONTROL = "public, max-age=604800"  # 7 days
+
+
+def is_cacheable_xiview_data_path(path: str) -> bool:
+    if not path.startswith(XIVIEW_DATA_PREFIXES):
+        return False
+    endpoint = path.rsplit("/", 1)[-1]
+    return (endpoint.startswith("get_xiview_") or
+            endpoint in ("get_peaklist", "get_matches_by_multiple_spectra_id"))
+
+
+@app.middleware("http")
+async def add_xiview_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    if (request.method == "GET" and response.status_code == 200
+            and is_cacheable_xiview_data_path(request.url.path)):
+        response.headers["Cache-Control"] = XIVIEW_CACHE_CONTROL
+    return response
 
 
 # Middleware to log the time taken for each request
